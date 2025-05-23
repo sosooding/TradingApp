@@ -5,6 +5,7 @@ import os.path
 
 from .dataExtractor import DataExtractor
 from binance.client import Client
+from typing import Literal
 
 class BinanceDataExtractor(DataExtractor):
 
@@ -14,26 +15,50 @@ class BinanceDataExtractor(DataExtractor):
 			api_key = cfg['binance']['api_key']
 			api_secret = cfg['binance']['api_secret']
 		self.client = Client(api_key = api_key, api_secret = api_secret)
+	
+	def getClient(self):
+		return self.client
 
-	def extractSymbolBetweenDates(self, symbol: str, startDate: datetime, endDate: datetime):
-		filename = f'data\\{symbol}_{startDate.strftime('%Y%m%d_%H%M%S')}_{endDate.strftime('%Y%m%d_%H%M%S')}.csv'
+	def extractSymbolBetweenDates(
+			self, symbol: str, 
+			startDate: datetime, 
+			endDate: datetime, 
+			interval: Literal[
+				Client.KLINE_INTERVAL_1MINUTE,
+				Client.KLINE_INTERVAL_1HOUR, 
+				Client.KLINE_INTERVAL_1DAY
+			]
+		) -> pd.DataFrame:
+		filename = f'data\\{symbol}_{startDate.strftime('%Y%m%d_%H%M%S')}_{endDate.strftime('%Y%m%d_%H%M%S')}_{interval}.csv'
 
 		# Cache check
 		if os.path.isfile(filename):
 			return pd.read_csv(filename)
+		
+		if 'MINUTE' in interval:
+			minutes = int(interval.split('MINUTE')[0])
+			batch_size = timedelta(minutes=1000 * minutes)
+		elif 'HOUR' in interval:
+			hours = int(interval.split('HOUR')[0])
+			batch_size = timedelta(hours=1000 * hours)
+		elif 'DAY' in interval:
+			days = int(interval.split('DAY')[0])
+			batch_size = timedelta(days=1000 * days)
+		else:
+			batch_size = timedelta(days=1000)
 
 		klines = []
 		current_start = startDate
 
 		while current_start < endDate:
 			batch_end = min(
-				current_start + timedelta(minutes=1000),
+				current_start + batch_size,
 				endDate
 			)
 
 			batch = self.client.get_historical_klines(
 				symbol 		= symbol,
-				interval 	= Client.KLINE_INTERVAL_1MINUTE,
+				interval 	= interval,
 				start_str 	= current_start.strftime("%d %b %Y %H:%M:%S"),
 				end_str 	= batch_end.strftime("%d %b %Y %H:%M:%S"),
 				limit 		= 1000
